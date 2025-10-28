@@ -14,7 +14,7 @@ describe('BooksService', () => {
   let service: BooksService;
   let repository: Repository<Book>;
 
-  const mockRepository = {
+  const mockBookRepository = {
     findOneBy: jest.fn(),
     findOne: jest.fn(),
     findAndCount: jest.fn(),
@@ -31,7 +31,7 @@ describe('BooksService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BooksService,
-        { provide: getRepositoryToken(Book), useValue: mockRepository },
+        { provide: getRepositoryToken(Book), useValue: mockBookRepository },
         { provide: getRepositoryToken(Author), useValue: mockAuthorRepository },
       ],
     }).compile();
@@ -44,96 +44,157 @@ describe('BooksService', () => {
     jest.clearAllMocks();
   });
 
-  it('should create a book', async () => {
-    const createDto: CreateBookDto = { title: 'Test Book', isbn: '1234567890', authorId: 1 };
-    const author = { id: 1, firstName: 'John', lastName: 'Doe', books: [] };
-    const book = { id: 1, ...createDto, author, createdAt: new Date(), updatedAt: new Date() };
-    mockAuthorRepository.findOneBy.mockResolvedValue(author);
-    mockRepository.findOne.mockResolvedValue(null);
-    mockRepository.create.mockReturnValue(book);
-    mockRepository.save.mockResolvedValue(book);
+  describe('create', () => {
+    it('should create a book', async () => {
+      const createDto: CreateBookDto = { title: 'Test Book', isbn: '1234567890', authorId: 1 };
+      const author = { id: 1, firstName: 'John', lastName: 'Doe', books: [] };
+      const book = { id: 1, ...createDto, author, createdAt: new Date(), updatedAt: new Date() };
+      mockAuthorRepository.findOneBy.mockResolvedValue(author);
+      mockBookRepository.findOne.mockResolvedValue(null);
+      mockBookRepository.create.mockReturnValue(book);
+      mockBookRepository.save.mockResolvedValue(book);
 
-    const result = await service.create(createDto);
-    expect(result).toEqual(book);
-    expect(mockRepository.create).toHaveBeenCalledWith({ ...createDto, author });
-    expect(mockRepository.save).toHaveBeenCalledWith(book);
+      const result = await service.create(createDto);
+      expect(result).toEqual(book);
+      expect(mockBookRepository.create).toHaveBeenCalledWith({ ...createDto, author });
+      expect(mockBookRepository.save).toHaveBeenCalledWith(book);
+    });
+
+    it('should throw BadRequestException if author does not exist', async () => {
+      const createDto: CreateBookDto = {
+        title: 'Test Book',
+        isbn: '1234567890',
+        authorId: 1
+      };
+      mockAuthorRepository.findOneBy.mockResolvedValue(null);
+
+      await expect(service.create(createDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw ConflictException if ISBN exists', async () => {
+      const createDto: CreateBookDto = {
+        title: 'Test Book',
+        isbn: '1234567891',
+        authorId: 2
+      };
+      const author = {
+        id: 1,
+        firstName: 'John',
+        lastName: 'Doe',
+        books: []
+      };
+      mockAuthorRepository.findOneBy.mockResolvedValue(author);
+      mockBookRepository.findOne.mockResolvedValue({ id: 2, ...createDto, author });
+      mockBookRepository.create.mockReturnValue({ ...createDto, author });
+
+      await expect(service.create(createDto)).rejects.toThrow(ConflictException);
+    });
   });
 
-  it('should throw BadRequestException if author does not exist', async () => {
-    const createDto: CreateBookDto = {
-      title: 'Test Book',
-      isbn: '1234567890',
-      authorId: 1
-    };
-    mockAuthorRepository.findOneBy.mockResolvedValue(null);
+  describe('findAll', () => {
+    it('should return paginated books', async () => {
+      const queryDto: QueryBookDto = { page: 1, limit: 10 };
+      const books = [
+        {
+          id: 1,
+          title: 'Book 1',
+          isbn: '978-3-16-148410-0',
+          author: { id: 1, firstName: 'John', lastName: 'Doe', books: [] }
+        },
+      ];
+      mockBookRepository.findAndCount.mockResolvedValue([books, 1]);
 
-    await expect(service.create(createDto)).rejects.toThrow(BadRequestException);
+      const result: PaginatedResponse<Book> = await service.findAll(queryDto);
+      expect(result).toEqual({ data: books, total: 1, page: 1, limit: 10 });
+      expect(mockBookRepository.findAndCount).toHaveBeenCalled();
+    });
+    it('should return paginated books with search', async () => {
+      const queryDto: QueryBookDto = { page: 1, limit: 10, search: 'Book 1' };
+      const books = [
+        {
+          id: 1,
+          title: 'Book 1',
+          isbn: '978-3-16-148410-0',
+        },
+      ];
+      mockBookRepository.findAndCount.mockResolvedValue([books, 1]);
+      const result: PaginatedResponse<Book> = await service.findAll(queryDto);
+      expect(result).toEqual({ data: books, total: 1, page: 1, limit: 10 });
+      expect(mockBookRepository.findAndCount).toHaveBeenCalled();
+    });
   });
 
-  it('should throw ConflictException if ISBN exists', async () => {
-    const createDto: CreateBookDto = {
-      title: 'Test Book',
-      isbn: '1234567891',
-      authorId: 2
-    };
-    const author = {
-      id: 1,
-      firstName: 'John',
-      lastName: 'Doe',
-      books: []
-    };
-    mockAuthorRepository.findOneBy.mockResolvedValue(author);
-    mockRepository.findOne.mockResolvedValue({ id: 2, ...createDto, author });
-    mockRepository.create.mockReturnValue({ ...createDto, author });
+  describe('findOne', () => {
+    it('should find one book', async () => {
+      const book = {
+        id: 1,
+        title: 'Book 1',
+        isbn: '978-3-16-148410-0',
+      };
+      mockBookRepository.findOne.mockResolvedValue(book);
 
-    await expect(service.create(createDto)).rejects.toThrow(ConflictException);
+      const result = await service.findOne(1);
+      expect(result).toEqual(book);
+      expect(mockBookRepository.findOne).toHaveBeenCalledWith({ where: { id: 1 }, relations: ['author'] });
+    });
+    it('should return null if book not found', async () => {
+      mockBookRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.findOne(1);
+      expect(result).toBeNull();
+    });
+  });
+  describe('update', () => {
+
+    it('should update a book', async () => {
+      const updateDto: UpdateBookDto = { title: 'Updated Book', authorId: 2 };
+      const existingBook = {
+        id: 1,
+        title: 'Old Book',
+        isbn: '978-3-16-148410-0',
+        author: { id: 1, firstName: 'John', lastName: 'Doe', books: [] },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      const updatedBook = { ...existingBook, ...updateDto, updatedAt: new Date() };
+      mockBookRepository.findOne.mockResolvedValue(existingBook);
+      mockBookRepository.save.mockResolvedValue(updatedBook);
+
+      const result = await service.update(1, updateDto);
+      expect(result).toEqual(updatedBook);
+      expect(mockBookRepository.save).toHaveBeenCalledWith({ ...existingBook, ...updateDto });
+    });
+    it('should return null when updating non-existing book', async () => {
+      const updateDto: UpdateBookDto = { title: 'Updated Book' };
+      mockBookRepository.findOne.mockResolvedValue(null);
+      const result = await service.update(999, updateDto);
+      expect(result).toBeNull();
+    });
   });
 
-  it('should update a book', async () => {
-    const updateDto: UpdateBookDto = { title: 'Updated Book', authorId: 2 };
-    const existingBook = {
-      id: 1,
-      title: 'Old Book',
-      isbn: '1234567890',
-      author: { id: 1, firstName: 'John', lastName: 'Doe', books: [] },
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    const updatedBook = { ...existingBook, ...updateDto, updatedAt: new Date() };
-    mockRepository.findOne.mockResolvedValue(existingBook);
-    mockRepository.save.mockResolvedValue(updatedBook);
+  describe('remove', () => {
+    it('should delete a book', async () => {
+      const existingBook = {
+        id: 1,
+        title: 'Book to Delete',
+        isbn: '978-3-16-148410-0',
+        author: { id: 1, firstName: 'John', lastName: 'Doe', books: [] },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      mockBookRepository.findOne.mockResolvedValue(existingBook);
+      mockBookRepository.remove.mockResolvedValue(existingBook);
 
-    const result = await service.update(1, updateDto);
-    expect(result).toEqual(updatedBook);
-    expect(mockRepository.save).toHaveBeenCalledWith({ ...existingBook, ...updateDto });
-  });
-  it('should return null when updating non-existing book', async () => {
-    const updateDto: UpdateBookDto = { title: 'Updated Book' };
-    mockRepository.findOne.mockResolvedValue(null);
-    const result = await service.update(999, updateDto);
-    expect(result).toBeNull();
-  });
+      const result = await service.remove(1);
+      expect(result).toBe(true);
+      expect(mockBookRepository.remove).toHaveBeenCalledWith(existingBook);
+    });
 
-  it('should delete a book', async () => {
-    const existingBook = {
-      id: 1,
-      title: 'Book to Delete',
-      isbn: '1234567890',
-      author: { id: 1, firstName: 'John', lastName: 'Doe', books: [] },
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-    mockRepository.findOne.mockResolvedValue(existingBook);
-    mockRepository.remove.mockResolvedValue(existingBook);
-
-    const result = await service.remove(1);
-    expect(result).toBe(true);
-    expect(mockRepository.remove).toHaveBeenCalledWith(existingBook);
+    it('should return false when deleting non-existing book', async () => {
+      mockBookRepository.findOne.mockResolvedValue(null);
+      const result = await service.remove(999);
+      expect(result).toBe(false);
+    });
   });
 
-  it('should return false when deleting non-existing book', async () => {
-    mockRepository.findOne.mockResolvedValue(null);
-    const result = await service.remove(999);
-    expect(result).toBe(false);
-  });
 });

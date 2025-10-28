@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Body, Query, Param, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Query, Param, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { BooksService } from './books.service';
 import { CreateBookDto } from './dto/create-book.dto';
 import { UpdateBookDto } from './dto/update-book.dto';
@@ -8,16 +8,17 @@ import { Book } from './entities/book.entity';
 
 @Controller('books')
 export class BooksController {
-  constructor(private readonly booksService: BooksService) {}
+  constructor(private readonly booksService: BooksService) { }
 
   @Post()
   async create(@Body() createBookDto: CreateBookDto): Promise<Book> {
     try {
       return await this.booksService.create(createBookDto);
     } catch (error) {
-      throw error instanceof BadRequestException
-        ? error
-        : new BadRequestException('Failed to create book');
+      if (error instanceof BadRequestException) throw error;
+      if (error instanceof ConflictException) throw error;
+      throw new BadRequestException('Failed to create book');
+
     }
   }
 

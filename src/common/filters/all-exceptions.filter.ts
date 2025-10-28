@@ -1,6 +1,5 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { Response } from 'express';
-
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
     catch(exception: unknown, host: ArgumentsHost) {
@@ -15,6 +14,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
             message: exception instanceof HttpException
                 ? exception.message
                 : 'Internal server error',
+            error: exception instanceof Error ? exception.name : 'UnknownError',
         });
     }
 }
