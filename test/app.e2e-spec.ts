@@ -15,11 +15,13 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/health (GET)', () => {
+  test('should return "API is running!" on /health(GET)', () => {
     return request(app.getHttpServer())
       .get('/health')
       .expect(200)
-      .expect({ statusCode: 200, data: 'API is running!' });
+      .expect(res => {
+        expect(res.text).toBe('API is running!');
+      });
   });
 
   afterAll(async () => {
